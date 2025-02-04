@@ -6,6 +6,7 @@
     This script reads a .env file and sets each valid key-value pair as an environment variable
     in the current PowerShell session. It supports commented lines (starting with #), handles
     empty lines, and can process values with or without quotes. The Select parameter supports glob patterns.
+    If the InlineCommands parameter is specified, inline PowerShell commands wrapped in $() will be executed and their output will be used as the value.
 
 .PARAMETER Path
     The path to the .env file to load. This is a positional parameter.
@@ -17,6 +18,9 @@
     Specify one or more variable names or patterns to load. If not specified, all variables will be loaded.
     Supports glob patterns like "*", "?", and "[]".
     Can be used multiple times, e.g., -Select "TEST_*","DEV_*"
+
+.PARAMETER InlineCommands
+    If specified, inline PowerShell commands wrapped in $() will be executed and their output will be used as the value.
 
 .EXAMPLE
     .\Set-EnvFromFile.ps1 .env
@@ -35,6 +39,7 @@
     KEY=VALUE
     # Comments are supported
     QUOTED_VALUE="my value"
+    INLINE_COMMAND=$(your-command-here)  # Executes as PowerShell command
 
 .OUTPUTS
     Writes success/failure messages to the host.
@@ -49,10 +54,14 @@ param(
     [switch]$ListOnly,
 
     [Parameter(ValueFromRemainingArguments=$true)]
-    [string[]]$Select
+    [string[]]$Select,
+
+    [Parameter()]
+    [switch]$InlineCommands
 )
 
 # Function to validate .env file exists
+
 function Test-EnvFile {
     if (-not (Test-Path $Path)) {
         throw "Environment file not found at path: $Path"
@@ -115,6 +124,19 @@ function Set-EnvVariables {
             else {
                 # Remove surrounding quotes if they exist
                 $value = $value -replace '^["'']|["'']$'
+
+                # Execute inline PowerShell commands wrapped in $()
+                if ($InlineCommands -and $value -match '^\$\((.*)\)$') {
+                    try {
+                        $command = $matches[1]
+                        $value = (Invoke-Expression -Command $command | Out-String).Trim()
+
+                    }
+                    catch {
+                        Write-Error "Error executing command for variable '$key': $_"
+                        throw
+                    }
+                }
 
                 # Set the environment variable
                 [System.Environment]::SetEnvironmentVariable($key, $value, 'Process')
